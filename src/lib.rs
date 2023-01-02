@@ -22,6 +22,9 @@ mod port_buffer;
 mod block_neural;
 mod block_misc;
 mod block_relu;
+mod block_leaky_relu;
+mod block_tanh;
+mod block_sigmoid;
 mod block_normalize;
 mod graph;
 

@@ -223,7 +223,7 @@ impl Regressor  {
                         println!("Tanh layer");
                     },
                     NNActivation::Sigmoid => {
-                        output = block_tanh::new_sigmoid_block(&mut bg, &mi, output).unwrap();
+                        output = block_sigmoid::new_sigmoid_block(&mut bg, &mi, output).unwrap();
                         println!("Sigmoid layer");
                     }
                 }
