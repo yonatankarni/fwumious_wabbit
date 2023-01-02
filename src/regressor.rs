@@ -210,20 +210,21 @@ impl Regressor  {
                 }
 
                 match activation {
+                    NNActivation::None => { },
                     NNActivation::Relu => {
                         output = block_relu::new_relu_block(&mut bg, &mi, output).unwrap();
                         println!("Relu layer");
                     },
                     NNActivation::LeakyRelu => {
-                        output = block_leaky_relu::new_leaky_rely_block(&mut bg, &mi, output).unwrap();
+                        output = block_leaky_relu::new_leaky_relu_block(&mut bg, output).unwrap();
                         println!("LeakyRelu layer");
                     },
                     NNActivation::Tanh => {
-                        output = block_tanh::new_tanh_block(&mut bg, &mi, output).unwrap();
+                        output = block_tanh::new_tanh_block(&mut bg, output).unwrap();
                         println!("Tanh layer");
                     },
                     NNActivation::Sigmoid => {
-                        output = block_sigmoid::new_sigmoid_block(&mut bg, &mi, output).unwrap();
+                        output = block_sigmoid::new_sigmoid_block(&mut bg, output).unwrap();
                         println!("Sigmoid layer");
                     }
                 }

@@ -151,7 +151,7 @@ mod tests {
     use crate::feature_buffer::HashAndValueAndSeq;
     use crate::vwmap;
     use block_helpers::{slearn2, spredict2};
-    use block_misc::{Observe};
+    use block_misc::Observe;
     use crate::assert_epsilon;
 
     fn fb_vec() -> feature_buffer::FeatureBuffer {
