@@ -1,39 +1,30 @@
 use std::any::Any;
-use std::io;
-use merand48::*;
-use core::arch::x86_64::*;
 use std::error::Error;
-use std::mem::{self, MaybeUninit};
+use libm::tanhf;
 
-
-use crate::optimizer;
 use crate::regressor;
 use crate::model_instance;
 use crate::feature_buffer;
 use crate::port_buffer;
-use crate::consts;
 use crate::block_helpers;
 use crate::graph;
-use optimizer::OptimizerTrait;
 use regressor::BlockTrait;
-use block_helpers::{Weight, WeightAndOptimizerData};
 use crate::graph::{BlockGraph};
 
 
-pub struct BlockRELU {    
+pub struct BlockTanh {
     pub num_inputs: usize,
     pub input_offset: usize,
     pub output_offset: usize,
 }
 
 
-pub fn new_relu_block(  bg: &mut graph::BlockGraph, 
-                        mi: &model_instance::ModelInstance,
+pub fn new_tanh_block(  bg: &mut graph::BlockGraph,
                         input: graph::BlockPtrOutput
                         ) -> Result<graph::BlockPtrOutput, Box<dyn Error>> {    
     let num_inputs = bg.get_num_output_values(vec![&input]);
     assert!(num_inputs != 0);
-    let mut block = Box::new(BlockRELU {
+    let block = Box::new(BlockTanh {
         output_offset: usize::MAX,
         input_offset: usize::MAX,
         num_inputs: num_inputs,
@@ -43,19 +34,14 @@ pub fn new_relu_block(  bg: &mut graph::BlockGraph,
     Ok(block_outputs.pop().unwrap())
 }
 
-
-
-
-
-
-impl BlockTrait for BlockRELU
+impl BlockTrait for BlockTanh
 
  {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 
-    fn allocate_and_init_weights(&mut self, mi: &model_instance::ModelInstance) {
+    fn allocate_and_init_weights(&mut self, _mi: &model_instance::ModelInstance) {
     }
 
     fn get_num_output_slots(&self) -> usize {1}   
@@ -90,13 +76,12 @@ impl BlockTrait for BlockRELU
         unsafe {
             for i in 0..self.num_inputs as usize {                                 
                 let x = *pb.tape.get_unchecked_mut(self.input_offset + i);
-                if x < 0.0 {
-                    *pb.tape.get_unchecked_mut(self.output_offset + i) = 0.0;
-                    *pb.tape.get_unchecked_mut(self.input_offset + i) = 0.0; 
-                } else {
-                    *pb.tape.get_unchecked_mut(self.output_offset + i) = x;
-                    *pb.tape.get_unchecked_mut(self.input_offset + i) = 1.0;
-                }
+
+                // for now using libm tanh computation. once we establish a baseline,
+                // we can try to replace with a lookup table
+                let t = tanhf(x);
+                *pb.tape.get_unchecked_mut(self.output_offset + i) = t;
+                *pb.tape.get_unchecked_mut(self.input_offset + i) = 1. - t*t; // derivative
             }
 
             block_helpers::forward_backward(further_blocks, fb, pb, update);
@@ -122,11 +107,7 @@ impl BlockTrait for BlockRELU
         unsafe {
             for i in 0..self.num_inputs as usize {                                 
                 let x = *pb.tape.get_unchecked_mut(self.input_offset + i);
-                if x < 0.0 {
-                    *pb.tape.get_unchecked_mut(self.output_offset + i) = 0.0;
-                } else {
-                    *pb.tape.get_unchecked_mut(self.output_offset + i) = x;
-                }
+                *pb.tape.get_unchecked_mut(self.output_offset + i) = tanhf(x);
             }
             block_helpers::forward(further_blocks, fb, pb);
         } // unsafe end
@@ -134,23 +115,12 @@ impl BlockTrait for BlockRELU
     
 }
 
-
-
-
-
-
-
-
-
-
 mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
     use crate::block_misc;
     use crate::feature_buffer;
-    use crate::feature_buffer::HashAndValueAndSeq;
-    use crate::vwmap;
-    use block_helpers::{slearn2, spredict2};
+    use block_helpers::slearn2;
     use block_misc::Observe;
     use crate::assert_epsilon;
 
@@ -171,8 +141,8 @@ mod tests {
         let mut mi = model_instance::ModelInstance::new_empty().unwrap();        
         let mut bg = BlockGraph::new();
         let input_block = block_misc::new_const_block(&mut bg, vec![2.0]).unwrap();
-        let relu_block = new_relu_block(&mut bg, &mi, input_block).unwrap();
-        let observe_block = block_misc::new_observe_block(&mut bg, relu_block, Observe::Forward, Some(1.0)).unwrap();
+        let tanh_block = new_tanh_block(&mut bg, input_block).unwrap();
+        block_misc::new_observe_block(&mut bg, tanh_block, Observe::Forward, Some(1.0)).unwrap();
         bg.finalize();
         bg.allocate_and_init_weights(&mi);
         
@@ -180,14 +150,14 @@ mod tests {
         
         let fb = fb_vec();
         assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 2.0);
-        assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 2.0); // relu desnt learn
+        assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 2.0); // tanh desnt learn
     }
     fn test_simple_negative() {
-        let mut mi = model_instance::ModelInstance::new_empty().unwrap();        
+        let mi = model_instance::ModelInstance::new_empty().unwrap();
         let mut bg = BlockGraph::new();
         let input_block = block_misc::new_const_block(&mut bg, vec![-2.0]).unwrap();
-        let relu_block = new_relu_block(&mut bg, &mi, input_block).unwrap();
-        let observe_block = block_misc::new_observe_block(&mut bg, relu_block, Observe::Forward, Some(1.0)).unwrap();
+        let tanh_block = new_tanh_block(&mut bg, input_block).unwrap();
+        block_misc::new_observe_block(&mut bg, tanh_block, Observe::Forward, Some(1.0)).unwrap();
         bg.finalize();
         bg.allocate_and_init_weights(&mi);
         
@@ -195,7 +165,7 @@ mod tests {
         
         let fb = fb_vec();
         assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 0.0);
-        assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 0.0); // relu desnt learn
+        assert_epsilon!(slearn2  (&mut bg, &fb, &mut pb, true), 0.0); // tanh desnt learn
     }
 
 
